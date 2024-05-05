@@ -1,31 +1,33 @@
-# Link Checker System
+# Link-Stats
 
 ## Overview
-The Link Checker is a powerful tool designed for website administrators and SEO specialists to assess and maintain the health of their website's link structure. It analyzes specified webpages and reports on the status and performance of all embedded hyperlinks ('interlinks'), providing crucial insights into potential site issues.
+Link-Stats is a web application for website maintenance and SEO optimization. It starts as a broken-link scanner and will evolve to provide comprehensive link analytics based on sitemaps. The tool supports concurrent scanning threads for rapid analysis.
 
 ## Key Features
-- **Link Extraction and Checking**: Automatically extracts and checks all interlinks from a given URL for status codes, redirects, and performance metrics.
-- **Detailed Reporting**: Provides detailed reports on the HTTP status, load times, final URLs, and more, for each interlink.
-- **Performance Optimization**: Helps in identifying slow-loading or broken links that could affect user experience and SEO rankings.
-- **User-Friendly Interface**: Offers a simple and intuitive interface for users to input URLs and view organized results, enhancing usability and accessibility.
-
-## How It Works
-1. **Input URL**: Users provide a URL of a webpage to check.
-2. **Fetch and Analyze**: The system fetches the page, analyzes its content, and extracts all interlinks.
-3. **Check and Report**: Each interlink is checked for its HTTP status, response time, and final destination after redirects.
-4. **Display Results**: Results are displayed in an organized manner, categorized by their origin for easy navigation and analysis.
-
-## Usage
-To use the Link Checker, simply enter the URL of the webpage you want to check in the provided input field and hit the 'Check Links' button. The system will process the URL, check all interlinks, and display the results dynamically on the page.
+- **Concurrent Scanning**: Multiple queue processing for faster link checking.
+- **Minimal Setup**: Simple installation with minimal dependencies.
 
 ## Installation
-To set up the Link Checker on your server:
-1. Clone the repository to your desired directory.
-2. Ensure PHP is installed and configured on your server.
-3. Access `index.php` from your browser to start using the application.
+1. **Clone the Repository**: Clone the repository to your environment.
+2. **Configure Server**: Ensure PHP is installed. Set the server to direct to `index.php`.
+3. **Server Compatibility**: Tested on Nginx; tests needed for Apache, IIS, etc.
+4. **Run**: Access `index.php` from a browser to start the application.
+
+## Usage
+Input a sitemap URL, click 'Check Links' to initiate scanning, and view results in real-time on the interface.
+
+## Suggested Improvements for Contributors
+- [ ] **Test on Various Servers**: Test the application on different server environments like Apache, Shared Hosting, Lightspeed, PHP versions, etc.
+- [ ] **Test on Various Websites**: Test the application on different websites, possibly compare with competitor apps for false positives.
+- [ ] **Enhance Error Handling in XML Parsing**: Improve error handling for XML parsing failures in `get_sitemap.php`.
+- [ ] **Refactor JavaScript to Improve Readability**: Refactor JavaScript in `index.php` using modern ES6+ syntax, including async/await where applicable.
+- [ ] **Create a Responsive CSS Layout**: Implement a responsive CSS layout for `index.php` to improve user experience on mobile devices.
+- [ ] **Optimize CURL Configurations**: Enhance CURL configuration settings in `get_sitemap.php` for more efficient network handling.
+- [ ] **Validate User Inputs More Rigorously**: Strengthen user input validation in `index.php` to enhance security and prevent common vulnerabilities.
+- [ ] **Implement Detailed Logging for Debugging**: Create a more detailed logging system that can help in debugging and tracking the flow of requests and responses.
+
+## Contributing
+Contributions are welcome!
 
 ## License
-This project is open source and available under the MIT License.
-
-## Support
-For support, feature requests, or contributions, please visit the project's GitHub page.
+Available under the MIT License.
