@@ -52,36 +52,56 @@ function get_sitemap_urls($sitemap_index_url) {
         return [];
     }
 
-    // Debug output
-    // file_put_contents('debug_sitemap.xml', $content);
-
-    $sitemap_urls = parse_xml($content, 'sitemap');
-    $mh = curl_multi_init();
-    $curl_array = [];
-
-    foreach ($sitemap_urls as $url) {
-        $ch = setup_curl($url);
-        curl_multi_add_handle($mh, $ch);
-        $curl_array[] = $ch;
+    libxml_use_internal_errors(true);
+    try {
+        $xml = new SimpleXMLElement($content);
+    } catch (Exception $e) {
+        error_log("Invalid XML returned from $sitemap_index_url: " . $e->getMessage());
+        return [];
     }
 
-    do {
-        curl_multi_exec($mh, $running);
-        curl_multi_select($mh);
-    } while ($running);
+    $root_name = $xml->getName();
 
-    $all_page_urls = [];
-    foreach ($curl_array as $ch) {
-        $content = curl_multi_getcontent($ch);
-        if ($content) {
-            $all_page_urls = array_merge($all_page_urls, parse_xml($content, 'url'));
+    if ($root_name === 'sitemapindex') {
+        $sitemap_urls = parse_xml($content, 'sitemap');
+        if (empty($sitemap_urls)) {
+            return [];
         }
-        curl_multi_remove_handle($mh, $ch);
-        curl_close($ch);
-    }
-    curl_multi_close($mh);
 
-    return $all_page_urls;
+        $mh = curl_multi_init();
+        $curl_array = [];
+
+        foreach ($sitemap_urls as $url) {
+            $ch = setup_curl($url);
+            curl_multi_add_handle($mh, $ch);
+            $curl_array[] = $ch;
+        }
+
+        do {
+            curl_multi_exec($mh, $running);
+            curl_multi_select($mh);
+        } while ($running);
+
+        $all_page_urls = [];
+        foreach ($curl_array as $ch) {
+            $content = curl_multi_getcontent($ch);
+            if ($content) {
+                $all_page_urls = array_merge($all_page_urls, parse_xml($content, 'url'));
+            }
+            curl_multi_remove_handle($mh, $ch);
+            curl_close($ch);
+        }
+        curl_multi_close($mh);
+
+        return $all_page_urls;
+    }
+
+    if ($root_name === 'urlset') {
+        return parse_xml($content, 'url');
+    }
+
+    error_log("Unsupported sitemap root '$root_name' returned from $sitemap_index_url");
+    return [];
 }
 
 function handle_request() {

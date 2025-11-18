@@ -187,6 +187,10 @@
                     throw new Error('Network response was not ok');
                 }
                 const urls = await response.json();
+                if (!Array.isArray(urls)) {
+                    const errorMessage = urls && typeof urls === 'object' && urls.error ? urls.error : 'Unexpected response format';
+                    throw new Error(errorMessage);
+                }
                 this.feedbackElement.textContent = 'Checking URLs...';
                 this.displayInitialUrls(urls);
                 this.enqueueUrls(urls);
