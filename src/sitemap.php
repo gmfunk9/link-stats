@@ -119,50 +119,48 @@ function decodeSitemapServiceResponse(string $body): array
 
 function extractSitemapUrls(array $payload): array
 {
-    $urls = findUrlsInPayload($payload);
+    $sitemapEntries = readSitemapEntries($payload);
 
-    if (count($urls) === 0) {
+    if (count($sitemapEntries) === 0) {
         return [];
     }
 
-    return array_values(array_unique($urls));
+    $filtered = filterValidUrls($sitemapEntries);
+
+    if (count($filtered) === 0) {
+        return [];
+    }
+
+    return array_values(array_unique($filtered));
 }
 
-function findUrlsInPayload(array $payload): array
+function readSitemapEntries(array $payload): array
 {
-    $urls = [];
-
-    if (array_key_exists('urls', $payload)) {
-        $urlsValue = $payload['urls'];
-
-        if (is_array($urlsValue)) {
-            $urls = filterValidUrls($urlsValue);
-        }
+    if (!array_key_exists('success', $payload)) {
+        error_log('Sitemap payload missing success flag.');
+        return [];
     }
 
-    if (count($urls) > 0) {
-        return $urls;
+    $serviceSuccess = $payload['success'];
+
+    if ($serviceSuccess !== true) {
+        error_log('Sitemap service reported failure.');
+        return [];
     }
 
-    $collected = [];
-
-    foreach ($payload as $value) {
-        if (!is_array($value)) {
-            continue;
-        }
-
-        $nestedUrls = findUrlsInPayload($value);
-
-        if (count($nestedUrls) === 0) {
-            continue;
-        }
-
-        foreach ($nestedUrls as $nestedUrl) {
-            $collected[] = $nestedUrl;
-        }
+    if (!array_key_exists('sitemap', $payload)) {
+        error_log('Sitemap payload missing sitemap list.');
+        return [];
     }
 
-    return $collected;
+    $sitemapEntries = $payload['sitemap'];
+
+    if (!is_array($sitemapEntries)) {
+        error_log('Sitemap list is not an array.');
+        return [];
+    }
+
+    return $sitemapEntries;
 }
 
 function filterValidUrls(array $values): array
