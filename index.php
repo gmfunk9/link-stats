@@ -345,6 +345,7 @@
             const detailsElement = document.createElement('details');
             const summaryElement = document.createElement('summary');
             summaryElement.setAttribute('data-url', url);
+            summaryElement.setAttribute('data-level', '0');
             detailsElement.appendChild(summaryElement);
             parentElement.appendChild(detailsElement);
             this.updateSummaryContent(summaryElement, url, status);
@@ -462,6 +463,16 @@
 
             if (elements.length === 0) {
                 return null;
+            }
+
+            for (const element of elements) {
+                const level = element.getAttribute('data-level');
+
+                if (level !== '0') {
+                    continue;
+                }
+
+                return element;
             }
 
             return elements[0];
