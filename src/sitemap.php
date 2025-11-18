@@ -2,9 +2,63 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/cache.php';
 require_once __DIR__ . '/http.php';
+require_once __DIR__ . '/response.php';
 
 const SITEMAP_SERVICE_BASE = 'https://getsitemap.funkpd.com/json?url=';
+const DAILY_URL_LIMIT = 100;
+
+if (isSitemapHttpRequest()) {
+    handleSitemapRequest();
+}
+
+function handleSitemapRequest(): void
+{
+    header('Content-Type: application/json');
+    $requestMethod = $_SERVER['REQUEST_METHOD'] ?? '';
+
+    if ($requestMethod !== 'POST') {
+        sendJsonResponse(buildErrorPayload('Invalid method; use POST.'));
+        return;
+    }
+
+    $requestedUrl = $_POST['url'] ?? '';
+
+    if ($requestedUrl === '') {
+        sendJsonResponse(buildErrorPayload('Missing field url; add to body.'));
+        return;
+    }
+
+    $validatedUrl = filter_var($requestedUrl, FILTER_VALIDATE_URL);
+
+    if ($validatedUrl === false) {
+        sendJsonResponse(buildErrorPayload('Invalid sitemap URL provided.'));
+        return;
+    }
+
+    $urls = fetchSitemapUrls($validatedUrl);
+
+    if (count($urls) === 0) {
+        sendJsonResponse(buildErrorPayload('No URLs found in sitemap.'));
+        return;
+    }
+
+    $rateLimited = rateLimitUrls($urls, $validatedUrl, DAILY_URL_LIMIT);
+    sendJsonResponse($rateLimited);
+}
+
+function isSitemapHttpRequest(): bool
+{
+    $scriptPath = $_SERVER['SCRIPT_FILENAME'] ?? '';
+
+    if ($scriptPath === '') {
+        return false;
+    }
+
+    return realpath($scriptPath) === __FILE__;
+}
 
 function fetchSitemapUrls(string $sitemapUrl): array
 {
@@ -128,7 +182,7 @@ function filterValidUrls(array $values): array
 
         $validatedUrl = filter_var($trimmedValue, FILTER_VALIDATE_URL);
 
-        if (!$validatedUrl) {
+        if ($validatedUrl === false) {
             continue;
         }
 

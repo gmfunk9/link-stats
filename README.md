@@ -19,10 +19,10 @@ Input a sitemap URL, click 'Check Links' to initiate scanning, and view results 
 ## Suggested Improvements for Contributors
 - [ ] **Test on Various Servers**: Test the application on different server environments like Apache, Shared Hosting, Lightspeed, PHP versions, etc.
 - [ ] **Test on Various Websites**: Test the application on different websites, possibly compare with competitor apps for false positives.
-- [ ] **Enhance Error Handling in XML Parsing**: Improve error handling for XML parsing failures in `get_sitemap.php`.
+- [ ] **Enhance Error Handling in XML Parsing**: Improve error handling for XML parsing failures in `src/sitemap.php`.
 - [ ] **Refactor JavaScript to Improve Readability**: Refactor JavaScript in `index.php` using modern ES6+ syntax, including async/await where applicable.
 - [ ] **Create a Responsive CSS Layout**: Implement a responsive CSS layout for `index.php` to improve user experience on mobile devices.
-- [ ] **Optimize CURL Configurations**: Enhance CURL configuration settings in `get_sitemap.php` for more efficient network handling.
+- [ ] **Optimize CURL Configurations**: Enhance CURL configuration settings in `src/sitemap.php` for more efficient network handling.
 - [ ] **Validate User Inputs More Rigorously**: Strengthen user input validation in `index.php` to enhance security and prevent common vulnerabilities.
 - [ ] **Implement Detailed Logging for Debugging**: Create a more detailed logging system that can help in debugging and tracking the flow of requests and responses.
 

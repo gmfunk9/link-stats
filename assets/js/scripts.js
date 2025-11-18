@@ -41,7 +41,7 @@ class LinkChecker {
         this.urlList = document.getElementById('urlList');
         this.feedbackElement = document.getElementById('feedback');
         this.config = {
-            apiUrl: 'get_sitemap.php',
+            apiUrl: 'src/sitemap.php',
             linkCheckUrl: 'check_links.php',
             clearCacheUrl: 'clear_cache.php'
         };
