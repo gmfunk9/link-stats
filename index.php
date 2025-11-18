@@ -105,7 +105,7 @@
 
 <body>
     <h1>Link Checker</h1>
-    <input type="text" id="sitemapUrl" placeholder="Enter sitemap URL" value="http://funkpd.local/sitemap_index.xml">
+    <input type="text" id="sitemapUrl" placeholder="Enter sitemap URL" value="https://funkpd.com/sitemap.xml">
     <button id="checkLinksButton">Check Links</button>
     <hr>
     <button id="toggle200">Toggle 200 Status</button>
@@ -160,6 +160,8 @@
             this.urlQueue = [];
             this.currentlyChecking = false;
             this.baseDomain = "";
+            this.rateLimit = 10;
+            this.storageKey = 'linkCheckerProgress';
             this.initEventListeners();
         }
         initEventListeners() {
@@ -188,12 +190,23 @@
                 }
                 const urls = await response.json();
                 if (!Array.isArray(urls)) {
-                    const errorMessage = urls && typeof urls === 'object' && urls.error ? urls.error : 'Unexpected response format';
+                    let errorMessage = 'Unexpected response format';
+                    if (urls) {
+                        if (typeof urls === 'object') {
+                            if (urls.error) {
+                                errorMessage = urls.error;
+                            }
+                        }
+                    }
                     throw new Error(errorMessage);
                 }
-                this.feedbackElement.textContent = 'Checking URLs...';
-                this.displayInitialUrls(urls);
-                this.enqueueUrls(urls);
+                const limitResult = this.applyRateLimit(urls, sitemapUrl);
+                this.feedbackElement.textContent = limitResult.message;
+                if (limitResult.urls.length === 0) {
+                    return;
+                }
+                this.displayInitialUrls(limitResult.urls);
+                this.enqueueUrls(limitResult.urls);
             } catch (error) {
                 this.handleError(error, 'Failed to fetch URLs');
             }
@@ -333,6 +346,87 @@
             } else {
                 return 'complete';
             }
+        }
+        getToday() {
+            const now = new Date();
+            return now.toISOString().slice(0, 10);
+        }
+        loadProgressStore() {
+            const raw = localStorage.getItem(this.storageKey);
+            if (!raw) {
+                return {};
+            }
+            try {
+                const parsed = JSON.parse(raw);
+                if (typeof parsed !== 'object') {
+                    return {};
+                }
+                if (parsed === null) {
+                    return {};
+                }
+                return parsed;
+            } catch (error) {
+                console.error('Failed to parse progress cache', error);
+                return {};
+            }
+        }
+        saveProgressStore(store) {
+            try {
+                localStorage.setItem(this.storageKey, JSON.stringify(store));
+            } catch (error) {
+                console.error('Failed to save progress cache', error);
+            }
+        }
+        createProgressEntry() {
+            return {
+                index: 0,
+                processedToday: 0,
+                date: this.getToday()
+            };
+        }
+        applyRateLimit(urls, sitemapUrl) {
+            const store = this.loadProgressStore();
+            const entry = store[sitemapUrl] || this.createProgressEntry();
+            const today = this.getToday();
+            if (entry.date !== today) {
+                entry.date = today;
+                entry.processedToday = 0;
+            }
+            if (typeof entry.index !== 'number') {
+                entry.index = 0;
+            }
+            if (typeof entry.processedToday !== 'number') {
+                entry.processedToday = 0;
+            }
+            if (entry.index >= urls.length) {
+                store[sitemapUrl] = entry;
+                this.saveProgressStore(store);
+                return {
+                    urls: [],
+                    message: 'All URLs processed. Nothing left to crawl.'
+                };
+            }
+            const remainingToday = this.rateLimit - entry.processedToday;
+            if (remainingToday <= 0) {
+                store[sitemapUrl] = entry;
+                this.saveProgressStore(store);
+                return {
+                    urls: [],
+                    message: 'Daily page limit reached. Continue tomorrow.'
+                };
+            }
+            const pendingCount = urls.length - entry.index;
+            const allowedCount = Math.min(remainingToday, pendingCount);
+            const batch = urls.slice(entry.index, entry.index + allowedCount);
+            entry.index = entry.index + batch.length;
+            entry.processedToday = entry.processedToday + batch.length;
+            store[sitemapUrl] = entry;
+            this.saveProgressStore(store);
+            const message = `Checking ${batch.length} URLs (${entry.index}/${urls.length})`;
+            return {
+                urls: batch,
+                message
+            };
         }
     }
     document.addEventListener('DOMContentLoaded', () => {
