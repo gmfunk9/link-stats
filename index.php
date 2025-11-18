@@ -105,7 +105,7 @@
 
 <body>
     <h1>Link Checker</h1>
-    <input type="text" id="sitemapUrl" placeholder="Enter sitemap URL" value="http://funkpd.local/sitemap_index.xml">
+    <input type="text" id="sitemapUrl" placeholder="Enter sitemap URL" value="https://funkpd.com/sitemap.xml">
     <button id="checkLinksButton">Check Links</button>
     <hr>
     <button id="toggle200">Toggle 200 Status</button>
@@ -184,14 +184,21 @@
                     body: 'url=' + encodeURIComponent(sitemapUrl)
                 });
                 if (!response.ok) {
-                    throw new Error('Network response was not ok');
+                    throw new Error('Sitemap fetch failed with status ' + response.status);
                 }
-                const urls = await response.json();
-                if (!Array.isArray(urls)) {
-                    const errorMessage = urls && typeof urls === 'object' && urls.error ? urls.error : 'Unexpected response format';
-                    throw new Error(errorMessage);
+                const payload = await response.json();
+                if (!payload) {
+                    throw new Error('No data returned from server.');
                 }
-                this.feedbackElement.textContent = 'Checking URLs...';
+                if (payload.error) {
+                    throw new Error(payload.error);
+                }
+                const urls = Array.isArray(payload.urls) ? payload.urls : [];
+                const message = typeof payload.message === 'string' ? payload.message : '';
+                this.feedbackElement.textContent = message;
+                if (urls.length === 0) {
+                    return;
+                }
                 this.displayInitialUrls(urls);
                 this.enqueueUrls(urls);
             } catch (error) {
@@ -219,26 +226,31 @@
             this.updateStatus(url, 'Working');
             try {
                 const response = await fetch(`${this.config.linkCheckUrl}?url=${encodeURIComponent(url)}`);
+                if (!response.ok) {
+                    throw new Error('Link check failed with status ' + response.status);
+                }
                 const text = await response.text(); // Get raw response text
                 // // console.log("Raw response:", text); // Log raw response for debugging
                 if (!text.trim()) { // Check if the text is empty or whitespace only
-                    throw new Error('Empty response received');
+                    throw new Error('Empty response received from server.');
                 }
                 let data = JSON.parse(text); // Parse text as JSON
                 this.handleResponse(data, url); // Handle the parsed JSON
             } catch (error) {
                 console.error('Error processing URL:', url, 'Error:', error);
                 this.handleError(error, 'Failed to process URL');
-                this.updateStatus(url, 'Error: ' + url + error.message);
+                this.updateStatus(url, 'Error: ' + error.message);
                 this.processQueue();
             }
         }
         handleResponse(data, url) {
             // // console.log("Handling response for URL:", url, "Data received:", data);  // Log received data
-            this.updateStatus(url, 'Complete');
             if (data.error) {
                 this.updateStatus(url, 'Error: ' + data.error);
+                this.processQueue();
+                return;
             }
+            this.updateStatus(url, 'Complete');
             if (data.interlinks) {
                 // console.log("data.interlinks", data.interlinks);
                 // console.log(data.interlinks);
