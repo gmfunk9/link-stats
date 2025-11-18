@@ -16,6 +16,14 @@ Link-Stats is a web application for website maintenance and SEO optimization. It
 ## Usage
 Input a sitemap URL, click 'Check Links' to initiate scanning, and view results in real-time on the interface.
 
+## Client-Only Mode
+- The UI now runs entirely in vanilla JavaScript and uses the browser's own
+  network connection to fetch the sitemap and crawl discovered pages.
+- No PHP endpoints are required for crawling; hosting the static files is
+  enough.
+- Remote sites must allow cross-origin requests or the browser will block
+  fetch calls; any such failures are reported inline in the feedback area.
+
 ## Suggested Improvements for Contributors
 - [ ] **Test on Various Servers**: Test the application on different server environments like Apache, Shared Hosting, Lightspeed, PHP versions, etc.
 - [ ] **Test on Various Websites**: Test the application on different websites, possibly compare with competitor apps for false positives.
