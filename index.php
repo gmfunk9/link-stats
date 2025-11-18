@@ -32,6 +32,11 @@
         font-weight: bold
     }
 
+    .summary-link-count {
+        font-weight: normal;
+        font-size: .9em;
+    }
+
     ul {
         list-style-type: none;
         padding-left: 20px
@@ -111,6 +116,7 @@
     <button id="toggle200">Toggle 200 Status</button>
     <button id="toggleExternal">Toggle External Links</button>
     <button id="expandAll">Expand/Collapse All</button>
+    <button id="clearCache">Clear Local Cache</button>
 
     <script>
     document.addEventListener('DOMContentLoaded', () => {
@@ -155,17 +161,31 @@
             this.feedbackElement = document.getElementById('feedback');
             this.config = {
                 apiUrl: 'get_sitemap.php',
-                linkCheckUrl: 'check_links.php'
+                linkCheckUrl: 'check_links.php',
+                clearCacheUrl: 'clear_cache.php'
             };
             this.urlQueue = [];
             this.currentlyChecking = false;
             this.baseDomain = "";
+            this.linkCounts = new Map();
             this.initEventListeners();
         }
         initEventListeners() {
-            document.getElementById('checkLinksButton').addEventListener('click', () => {
-                this.fetchUrlsAndCheckLinks();
-            });
+            const checkLinksButton = document.getElementById('checkLinksButton');
+
+            if (checkLinksButton) {
+                checkLinksButton.addEventListener('click', () => {
+                    this.fetchUrlsAndCheckLinks();
+                });
+            }
+
+            const clearCacheButton = document.getElementById('clearCache');
+
+            if (clearCacheButton) {
+                clearCacheButton.addEventListener('click', () => {
+                    this.clearLocalCache();
+                });
+            }
         }
         async fetchUrlsAndCheckLinks() {
             const sitemapUrl = document.getElementById('sitemapUrl').value.trim();
@@ -224,6 +244,39 @@
             this.urlQueue = this.urlQueue.concat(urls);
             this.processQueue();
         }
+        async clearLocalCache() {
+            this.feedbackElement.textContent = 'Clearing cache...';
+
+            try {
+                const response = await fetch(this.config.clearCacheUrl, {
+                    method: 'POST'
+                });
+
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+
+                const result = await response.json();
+
+                if (!result) {
+                    throw new Error('Empty response payload.');
+                }
+
+                if (result.error) {
+                    throw new Error(result.error);
+                }
+
+                let message = 'Cache cleared.';
+
+                if (typeof result.message === 'string') {
+                    message = result.message;
+                }
+
+                this.feedbackElement.textContent = message;
+            } catch (error) {
+                this.handleError(error, 'Failed to clear cache');
+            }
+        }
         processQueue() {
             if (this.urlQueue.length > 0) {
                 this.processUrl(this.urlQueue.shift());
@@ -268,78 +321,213 @@
 
 
         updateStatus(url, status) {
-            let element = document.querySelector(`summary[data-url="${url}"]`);
-            if (element) {
-                const detailsElement = element.parentNode;
-                detailsElement.classList.remove('queued', 'working', 'complete');
-                detailsElement.classList.add(this.getStatusClass(status));
-                element.textContent = `${url} - ${status}`;
+            const summaryElement = this.getSummaryElement(url);
+
+            if (!summaryElement) {
+                return;
             }
+
+            const parentNode = summaryElement.parentNode;
+
+            if (!parentNode) {
+                return;
+            }
+
+            if (!(parentNode instanceof HTMLElement)) {
+                return;
+            }
+
+            parentNode.classList.remove('queued', 'working', 'complete');
+            parentNode.classList.add(this.getStatusClass(status));
+            this.updateSummaryContent(summaryElement, url, status);
         }
         createDetailElement(url, status, parentElement) {
             const detailsElement = document.createElement('details');
             const summaryElement = document.createElement('summary');
             summaryElement.setAttribute('data-url', url);
-            summaryElement.textContent = `${url} - ${status}`;
             detailsElement.appendChild(summaryElement);
             parentElement.appendChild(detailsElement);
+            this.updateSummaryContent(summaryElement, url, status);
             return summaryElement;
         }
         addFoundLink(url, statusData, parentUrl) {
-            const parentElement = document.querySelector(`summary[data-url="${parentUrl}"]`).parentNode;
-            if (parentElement) {
-                let isExternal = false;
-                try {
-                    const urlObject = new URL(url.replace('\\', '/'));
-                    isExternal = !urlObject.hostname.includes(this.baseDomain);
-                } catch (error) {
-                    console.error(`Invalid URL: ${url}`);
-                    isExternal = true; // or set it to false, depending on your requirements
-                }
+            const parentSummary = this.getSummaryElement(parentUrl);
 
-                const detailsElement = document.createElement('details');
-                detailsElement.setAttribute('data-url', url);
-                detailsElement.setAttribute('data-http-status', statusData.status);
-                detailsElement.setAttribute('data-load-time', statusData?.loadTime?.toFixed(3));
-
-                detailsElement.classList.add(this.getStatusClass('Status: ' + statusData.status));
-
-                if (isExternal) {
-                    detailsElement.setAttribute('data-external', 'true');
-                }
-
-                const summaryElement = document.createElement('summary');
-                summaryElement.textContent = `${url} - Status: ${statusData.status}`;
-                detailsElement.appendChild(summaryElement);
-
-                const finalUrlDiv = document.createElement('div');
-                finalUrlDiv.textContent = `Final URL: ${statusData.finalUrl}`;
-                detailsElement.appendChild(finalUrlDiv);
-
-                const loadTimeDiv = document.createElement('div');
-                loadTimeDiv.textContent = `Load Time: ${statusData?.loadTime?.toFixed(3)} seconds`;
-                detailsElement.appendChild(loadTimeDiv);
-
-                if (statusData.title) {
-                    const titleDiv = document.createElement('div');
-                    titleDiv.textContent = `Title: ${statusData.title}`;
-                    detailsElement.appendChild(titleDiv);
-                }
-
-                if (statusData.contentLength) {
-                    const contentLengthDiv = document.createElement('div');
-                    contentLengthDiv.textContent = `Content Length: ${statusData.contentLength} bytes`;
-                    detailsElement.appendChild(contentLengthDiv);
-                }
-
-                parentElement.appendChild(detailsElement);
-            } else {
-                console.error("Failed to find the parent element for URL:", url);
+            if (!parentSummary) {
+                console.error('Failed to find the parent summary for URL:', parentUrl);
+                return;
             }
+
+            const parentElement = parentSummary.parentNode;
+
+            if (!parentElement) {
+                console.error('Failed to find the parent element for URL:', url);
+                return;
+            }
+
+            if (!(parentElement instanceof HTMLElement)) {
+                console.error('Invalid parent container for URL:', url);
+                return;
+            }
+
+            let isExternal = false;
+            try {
+                const sanitizedUrl = url.replace('\\', '/');
+                const urlObject = new URL(sanitizedUrl);
+                isExternal = !urlObject.hostname.includes(this.baseDomain);
+            } catch (error) {
+                console.error('Invalid URL:', url);
+                isExternal = true;
+            }
+
+            const detailsElement = document.createElement('details');
+            detailsElement.setAttribute('data-url', url);
+            detailsElement.setAttribute('data-http-status', statusData.status);
+
+            const formattedLoadTime = this.formatLoadTime(statusData?.loadTime);
+
+            if (formattedLoadTime !== '') {
+                detailsElement.setAttribute('data-load-time', formattedLoadTime);
+            }
+
+            detailsElement.classList.add(this.getStatusClass('Status: ' + statusData.status));
+
+            if (isExternal) {
+                detailsElement.setAttribute('data-external', 'true');
+            }
+
+            const summaryElement = document.createElement('summary');
+            summaryElement.setAttribute('data-url', url);
+            detailsElement.appendChild(summaryElement);
+            this.updateSummaryContent(summaryElement, url, 'Status: ' + statusData.status);
+
+            const finalUrlDiv = document.createElement('div');
+            let finalUrlText = 'Unknown';
+
+            if (typeof statusData.finalUrl === 'string') {
+                finalUrlText = statusData.finalUrl;
+            }
+
+            finalUrlDiv.textContent = `Final URL: ${finalUrlText}`;
+            detailsElement.appendChild(finalUrlDiv);
+
+            const loadTimeDiv = document.createElement('div');
+            let loadTimeText = 'N/A';
+
+            if (formattedLoadTime !== '') {
+                loadTimeText = formattedLoadTime + ' seconds';
+            }
+
+            loadTimeDiv.textContent = `Load Time: ${loadTimeText}`;
+            detailsElement.appendChild(loadTimeDiv);
+
+            if (statusData.title) {
+                const titleDiv = document.createElement('div');
+                titleDiv.textContent = `Title: ${statusData.title}`;
+                detailsElement.appendChild(titleDiv);
+            }
+
+            if (statusData.contentLength) {
+                const contentLengthDiv = document.createElement('div');
+                contentLengthDiv.textContent = `Content Length: ${statusData.contentLength} bytes`;
+                detailsElement.appendChild(contentLengthDiv);
+            }
+
+            parentElement.appendChild(detailsElement);
+            this.incrementLinkCount(url);
         }
         handleError(error, message) {
             console.error('Error:', error, 'Message:', message);
             this.feedbackElement.textContent = message + ': ' + error.message;
+        }
+        buildUrlSelector(url) {
+            const escapedQuotes = url.replace(/"/g, '\"');
+
+            if (typeof CSS === 'undefined') {
+                return escapedQuotes;
+            }
+
+            if (typeof CSS.escape !== 'function') {
+                return escapedQuotes;
+            }
+
+            return CSS.escape(url);
+        }
+        getSummaryElements(url) {
+            const selector = this.buildUrlSelector(url);
+            return document.querySelectorAll(`summary[data-url="${selector}"]`);
+        }
+        getSummaryElement(url) {
+            const elements = this.getSummaryElements(url);
+
+            if (elements.length === 0) {
+                return null;
+            }
+
+            return elements[0];
+        }
+        ensureLinkCountEntry(url) {
+            if (this.linkCounts.has(url)) {
+                return;
+            }
+
+            this.linkCounts.set(url, 0);
+        }
+        getSummaryTextElement(summaryElement) {
+            let textElement = summaryElement.querySelector('.summary-text');
+
+            if (!textElement) {
+                textElement = document.createElement('div');
+                textElement.classList.add('summary-text');
+                summaryElement.prepend(textElement);
+            }
+
+            return textElement;
+        }
+        getSummaryCountElement(summaryElement) {
+            let countElement = summaryElement.querySelector('.summary-link-count');
+
+            if (!countElement) {
+                countElement = document.createElement('div');
+                countElement.classList.add('summary-link-count');
+                summaryElement.appendChild(countElement);
+            }
+
+            return countElement;
+        }
+        formatLinkCountText(url) {
+            this.ensureLinkCountEntry(url);
+            const count = this.linkCounts.get(url);
+            return `Incoming links: ${count}`;
+        }
+        updateSummaryContent(summaryElement, url, statusText) {
+            this.ensureLinkCountEntry(url);
+            const textElement = this.getSummaryTextElement(summaryElement);
+            textElement.textContent = `${url} - ${statusText}`;
+            const countElement = this.getSummaryCountElement(summaryElement);
+            countElement.textContent = this.formatLinkCountText(url);
+        }
+        refreshLinkCountDisplays(url) {
+            const summaries = this.getSummaryElements(url);
+            const countText = this.formatLinkCountText(url);
+            summaries.forEach(summary => {
+                const countElement = this.getSummaryCountElement(summary);
+                countElement.textContent = countText;
+            });
+        }
+        incrementLinkCount(url) {
+            this.ensureLinkCountEntry(url);
+            const currentCount = this.linkCounts.get(url);
+            const nextCount = currentCount + 1;
+            this.linkCounts.set(url, nextCount);
+            this.refreshLinkCountDisplays(url);
+        }
+        formatLoadTime(loadTimeValue) {
+            if (typeof loadTimeValue !== 'number') {
+                return '';
+            }
+
+            return loadTimeValue.toFixed(3);
         }
         getStatusClass(status) {
             if (status === 'Queued') {

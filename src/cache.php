@@ -168,3 +168,48 @@ function rateLimitUrls(
         'processed' => $entry['index'],
     ];
 }
+
+function clearCacheDirectory(string $directory): void
+{
+    if (!is_dir($directory)) {
+        return;
+    }
+
+    $items = scandir($directory);
+
+    if ($items === false) {
+        return;
+    }
+
+    foreach ($items as $item) {
+        if ($item === '.') {
+            continue;
+        }
+
+        if ($item === '..') {
+            continue;
+        }
+
+        $path = $directory . '/' . $item;
+        deleteCachePath($path);
+    }
+}
+
+function deleteCachePath(string $path): void
+{
+    if (is_dir($path)) {
+        clearCacheDirectory($path);
+        rmdir($path);
+        return;
+    }
+
+    if (is_file($path)) {
+        unlink($path);
+    }
+}
+
+function clearCacheStorage(): void
+{
+    clearCacheDirectory(LINK_CACHE_DIR);
+    clearCacheDirectory(RATE_LIMIT_DIR);
+}

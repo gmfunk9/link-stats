@@ -9,6 +9,8 @@ require_once __DIR__ . '/src/cache.php';
 require_once __DIR__ . '/src/sitemap.php';
 require_once __DIR__ . '/src/response.php';
 
+const DAILY_URL_LIMIT = 100;
+
 $requestMethod = $_SERVER['REQUEST_METHOD'] ?? '';
 $requestedUrl = $_POST['url'] ?? '';
 
@@ -32,6 +34,6 @@ if (count($urls) === 0) {
     sendJsonResponse(buildErrorPayload('No URLs found in sitemap.'));
 }
 
-$rateLimited = rateLimitUrls($urls, $validatedUrl, 10);
+$rateLimited = rateLimitUrls($urls, $validatedUrl, DAILY_URL_LIMIT);
 
 sendJsonResponse($rateLimited);
