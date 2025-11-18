@@ -3,16 +3,23 @@ ini_set('error_log', './errlog.log');
 ini_set('display_errors', 0);
 error_reporting(E_ALL);
 header('Content-Type: application/json');
+
 function getCacheFileName($mainUrl) {
-	$parsedUrl = parse_url($mainUrl);
-	$domain = isset($parsedUrl['host']) ? preg_replace('/[^a-zA-Z0-9\-\.]+/', '', $parsedUrl['host']) : 'default';
-	return "./cache_{$domain}.json";
+    $parsedUrl = parse_url($mainUrl);
+    $domain = isset($parsedUrl['host']) ? preg_replace('/[^a-zA-Z0-9\-\.]+/', '', $parsedUrl['host']) : 'default';
+    return "./cache_{$domain}.json";
 }
+
 function saveCache($cacheFileName) {
-	global $linkCache;
-	if (file_put_contents($cacheFileName, json_encode($linkCache, JSON_PRETTY_PRINT)) === false) {
-	    error_log('Failed to write cache file: ' . $cacheFileName);
-	}
+    global $linkCache;
+    $json = json_encode($linkCache, JSON_PRETTY_PRINT);
+    if ($json === false) {
+        error_log('Failed to encode cache for ' . $cacheFileName);
+        return;
+    }
+    if (file_put_contents($cacheFileName, $json, LOCK_EX) === false) {
+        error_log('Failed to write cache file: ' . $cacheFileName);
+    }
 }
 function extractLinks($html, $baseUrl) {
     preg_match_all('/<a\s+[^>]*href="([^"]+)"[^>]*>/i', $html, $matches);
@@ -138,34 +145,39 @@ function processInterlinks($html, $baseUrl) {
 	}
 	return ['interlinks' => $interlinks];
 }
-function sendJsonResponse($data, $mainUrl = null) {
-	$output = ['page' => $mainUrl];
-	foreach ($data['interlinks'] as $originalUrl => $interlink) {
-	    $strUrl = $originalUrl;  // Prefix 'url_' to force string keys
-	    if (isset($strUrl)) {
-	        $output['interlinks'][$strUrl] = $interlink;
-	    } else {
-	        // Handle error cases or missing finalUrl differently
-            $uuid = uniqid();
-	        $output['interlinks']['error_' . $mainUrl . $uuid] = $interlink;
-	        error_log("LINK ERROR $mainUrl - $uuid");
-	    }
-	}
-	echo json_encode($output, JSON_UNESCAPED_SLASHES) ?: json_encode(['error' => 'Failed to generate JSON: ' . json_last_error_msg()]);
-	exit;
+function sendJsonResponse($payload) {
+    echo json_encode($payload, JSON_UNESCAPED_SLASHES);
+    exit;
 }
-if (empty($_GET['url']) || !filter_var($_GET['url'], FILTER_VALIDATE_URL)) {
-	sendJsonResponse(['error' => 'Invalid or no URL provided']);
-} else {
-	$mainUrl = $_GET['url'];
-	$cacheFileName = getCacheFileName($mainUrl);
+
+function requireMainUrl() {
+    if (!isset($_GET['url'])) {
+        sendJsonResponse(['error' => 'Missing field url; add to query string.']);
+    }
+    $mainUrl = $_GET['url'];
+    if (!$mainUrl) {
+        sendJsonResponse(['error' => 'Empty field url; provide a value.']);
+    }
+    if (!filter_var($mainUrl, FILTER_VALIDATE_URL)) {
+        sendJsonResponse(['error' => 'Invalid field url; provide full URL.']);
+    }
+    return $mainUrl;
 }
+
+$mainUrl = requireMainUrl();
+$cacheFileName = getCacheFileName($mainUrl);
 $linkCache = file_exists($cacheFileName) ? json_decode(file_get_contents($cacheFileName), true) : [];
+if (!is_array($linkCache)) {
+    $linkCache = [];
+}
 $fetchResult = fetchUrlContent($mainUrl);
 if (isset($fetchResult['error'])) {
-	sendJsonResponse(['error' => $fetchResult['error']]);
-} else {
-	$mainResponse = getInterlinkResponse($mainUrl);  
-	$interlinks = processInterlinks($fetchResult['body'], $fetchResult['finalUrl']);
-	sendJsonResponse(array_merge(['mainUrl' => $mainResponse], $interlinks), $mainUrl);
+    sendJsonResponse(['error' => $fetchResult['error']]);
 }
+$mainResponse = getInterlinkResponse($mainUrl);
+$interlinkData = processInterlinks($fetchResult['body'], $fetchResult['finalUrl']);
+sendJsonResponse([
+    'page' => $mainUrl,
+    'mainUrl' => $mainResponse,
+    'interlinks' => $interlinkData['interlinks']
+]);

@@ -2,6 +2,9 @@
 
 header('Content-Type: application/json');
 
+const RATE_LIMIT = 10;
+const RATE_LIMIT_STORE = __DIR__ . '/rate_limit.json';
+
 function setup_curl($url) {
     $ch = curl_init($url);
     $options = [
@@ -104,13 +107,120 @@ function get_sitemap_urls($sitemap_index_url) {
     return [];
 }
 
-function handle_request() {
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($sitemap_index_url = $_POST['url'] ?? '') && filter_var($sitemap_index_url, FILTER_VALIDATE_URL)) {
-        $urls = get_sitemap_urls($sitemap_index_url);
-        echo json_encode($urls ? $urls : ["error" => "no_urls_found"]);
-    } else {
-        echo json_encode(["error" => "invalid_request"]);
+function get_client_id() {
+    $client = $_SERVER['REMOTE_ADDR'] ?? '';
+    if (!$client) {
+        return 'unknown';
     }
+    return $client;
+}
+
+function load_rate_limit_store() {
+    if (!file_exists(RATE_LIMIT_STORE)) {
+        return [];
+    }
+    $raw = file_get_contents(RATE_LIMIT_STORE);
+    if (!$raw) {
+        return [];
+    }
+    $decoded = json_decode($raw, true);
+    if (!is_array($decoded)) {
+        return [];
+    }
+    return $decoded;
+}
+
+function save_rate_limit_store($store) {
+    $json = json_encode($store, JSON_PRETTY_PRINT);
+    if ($json === false) {
+        error_log('Failed to encode rate limit store');
+        return;
+    }
+    file_put_contents(RATE_LIMIT_STORE, $json, LOCK_EX);
+}
+
+function init_rate_limit_entry() {
+    return [
+        'index' => 0,
+        'processed_today' => 0,
+        'date' => date('Y-m-d')
+    ];
+}
+
+function apply_rate_limit($urls, $sitemap_index_url) {
+    $total = count($urls);
+    if ($total === 0) {
+        return [
+            'urls' => [],
+            'message' => 'No URLs found in sitemap.'
+        ];
+    }
+    $store = load_rate_limit_store();
+    $client = get_client_id();
+    if (!isset($store[$sitemap_index_url])) {
+        $store[$sitemap_index_url] = [];
+    }
+    if (!isset($store[$sitemap_index_url][$client])) {
+        $store[$sitemap_index_url][$client] = init_rate_limit_entry();
+    }
+    $entry = $store[$sitemap_index_url][$client];
+    $today = date('Y-m-d');
+    if ($entry['date'] !== $today) {
+        $entry['date'] = $today;
+        $entry['processed_today'] = 0;
+    }
+    if ($entry['index'] >= $total) {
+        $store[$sitemap_index_url][$client] = $entry;
+        save_rate_limit_store($store);
+        return [
+            'urls' => [],
+            'message' => 'All URLs processed. Nothing left to crawl.'
+        ];
+    }
+    $remaining_today = RATE_LIMIT - $entry['processed_today'];
+    if ($remaining_today <= 0) {
+        $store[$sitemap_index_url][$client] = $entry;
+        save_rate_limit_store($store);
+        return [
+            'urls' => [],
+            'message' => 'Daily page limit reached. Continue tomorrow.'
+        ];
+    }
+    $pending = $total - $entry['index'];
+    $allowed = min($remaining_today, $pending);
+    $batch = array_slice($urls, $entry['index'], $allowed);
+    $entry['index'] = $entry['index'] + $allowed;
+    $entry['processed_today'] = $entry['processed_today'] + $allowed;
+    $store[$sitemap_index_url][$client] = $entry;
+    save_rate_limit_store($store);
+    $message = 'Checking ' . $allowed . ' URLs (' . $entry['index'] . '/' . $total . ')';
+    return [
+        'urls' => $batch,
+        'message' => $message
+    ];
+}
+
+function handle_request() {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        echo json_encode(["error" => "Unsupported request method; use POST."]);
+        return;
+    }
+    $sitemap_index_url = $_POST['url'] ?? '';
+    if (!$sitemap_index_url) {
+        echo json_encode(["error" => "Missing field url; add to body."]);
+        return;
+    }
+    if (!filter_var($sitemap_index_url, FILTER_VALIDATE_URL)) {
+        echo json_encode(["error" => "Invalid sitemap URL provided."]);
+        return;
+    }
+    $urls = get_sitemap_urls($sitemap_index_url);
+    if (!$urls) {
+        echo json_encode(["error" => "no_urls_found"]);
+        return;
+    }
+    $limited = apply_rate_limit($urls, $sitemap_index_url);
+    echo json_encode($limited);
 }
 
 handle_request();
