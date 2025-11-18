@@ -160,8 +160,6 @@
             this.urlQueue = [];
             this.currentlyChecking = false;
             this.baseDomain = "";
-            this.rateLimit = 10;
-            this.storageKey = 'linkCheckerProgress';
             this.initEventListeners();
         }
         initEventListeners() {
@@ -188,25 +186,30 @@
                 if (!response.ok) {
                     throw new Error('Network response was not ok');
                 }
-                const urls = await response.json();
-                if (!Array.isArray(urls)) {
-                    let errorMessage = 'Unexpected response format';
-                    if (urls) {
-                        if (typeof urls === 'object') {
-                            if (urls.error) {
-                                errorMessage = urls.error;
-                            }
-                        }
-                    }
-                    throw new Error(errorMessage);
+                const result = await response.json();
+                if (!result) {
+                    throw new Error('Empty response payload.');
                 }
-                const limitResult = this.applyRateLimit(urls, sitemapUrl);
-                this.feedbackElement.textContent = limitResult.message;
-                if (limitResult.urls.length === 0) {
+                if (typeof result !== 'object') {
+                    throw new Error('Unexpected response format.');
+                }
+                if (result.error) {
+                    throw new Error(result.error);
+                }
+                let batch = [];
+                if (Array.isArray(result.urls)) {
+                    batch = result.urls;
+                }
+                let message = 'No status provided.';
+                if (typeof result.message === 'string') {
+                    message = result.message;
+                }
+                this.feedbackElement.textContent = message;
+                if (batch.length === 0) {
                     return;
                 }
-                this.displayInitialUrls(limitResult.urls);
-                this.enqueueUrls(limitResult.urls);
+                this.displayInitialUrls(batch);
+                this.enqueueUrls(batch);
             } catch (error) {
                 this.handleError(error, 'Failed to fetch URLs');
             }
@@ -346,87 +349,6 @@
             } else {
                 return 'complete';
             }
-        }
-        getToday() {
-            const now = new Date();
-            return now.toISOString().slice(0, 10);
-        }
-        loadProgressStore() {
-            const raw = localStorage.getItem(this.storageKey);
-            if (!raw) {
-                return {};
-            }
-            try {
-                const parsed = JSON.parse(raw);
-                if (typeof parsed !== 'object') {
-                    return {};
-                }
-                if (parsed === null) {
-                    return {};
-                }
-                return parsed;
-            } catch (error) {
-                console.error('Failed to parse progress cache', error);
-                return {};
-            }
-        }
-        saveProgressStore(store) {
-            try {
-                localStorage.setItem(this.storageKey, JSON.stringify(store));
-            } catch (error) {
-                console.error('Failed to save progress cache', error);
-            }
-        }
-        createProgressEntry() {
-            return {
-                index: 0,
-                processedToday: 0,
-                date: this.getToday()
-            };
-        }
-        applyRateLimit(urls, sitemapUrl) {
-            const store = this.loadProgressStore();
-            const entry = store[sitemapUrl] || this.createProgressEntry();
-            const today = this.getToday();
-            if (entry.date !== today) {
-                entry.date = today;
-                entry.processedToday = 0;
-            }
-            if (typeof entry.index !== 'number') {
-                entry.index = 0;
-            }
-            if (typeof entry.processedToday !== 'number') {
-                entry.processedToday = 0;
-            }
-            if (entry.index >= urls.length) {
-                store[sitemapUrl] = entry;
-                this.saveProgressStore(store);
-                return {
-                    urls: [],
-                    message: 'All URLs processed. Nothing left to crawl.'
-                };
-            }
-            const remainingToday = this.rateLimit - entry.processedToday;
-            if (remainingToday <= 0) {
-                store[sitemapUrl] = entry;
-                this.saveProgressStore(store);
-                return {
-                    urls: [],
-                    message: 'Daily page limit reached. Continue tomorrow.'
-                };
-            }
-            const pendingCount = urls.length - entry.index;
-            const allowedCount = Math.min(remainingToday, pendingCount);
-            const batch = urls.slice(entry.index, entry.index + allowedCount);
-            entry.index = entry.index + batch.length;
-            entry.processedToday = entry.processedToday + batch.length;
-            store[sitemapUrl] = entry;
-            this.saveProgressStore(store);
-            const message = `Checking ${batch.length} URLs (${entry.index}/${urls.length})`;
-            return {
-                urls: batch,
-                message
-            };
         }
     }
     document.addEventListener('DOMContentLoaded', () => {

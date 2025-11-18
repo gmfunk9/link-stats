@@ -5,6 +5,7 @@ declare(strict_types=1);
 header('Content-Type: application/json');
 
 require_once __DIR__ . '/src/bootstrap.php';
+require_once __DIR__ . '/src/cache.php';
 require_once __DIR__ . '/src/sitemap.php';
 require_once __DIR__ . '/src/response.php';
 
@@ -31,4 +32,6 @@ if (count($urls) === 0) {
     sendJsonResponse(buildErrorPayload('No URLs found in sitemap.'));
 }
 
-sendJsonResponse($urls);
+$rateLimited = rateLimitUrls($urls, $validatedUrl, 10);
+
+sendJsonResponse($rateLimited);
