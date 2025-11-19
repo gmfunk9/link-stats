@@ -109,7 +109,8 @@ function createRateLimitEntry(): array
 function rateLimitUrls(
     array $urls,
     string $sitemapUrl,
-    int $dailyLimit
+    int $dailyLimit,
+    ?int $resumeIndex = null
 ): array {
     $entry = loadRateLimitEntry($sitemapUrl);
     $today = date('Y-m-d');
@@ -128,6 +129,19 @@ function rateLimitUrls(
     }
 
     $totalUrls = count($urls);
+
+    if ($resumeIndex !== null) {
+        $normalizedResumeIndex = $resumeIndex;
+        if ($normalizedResumeIndex < 0) {
+            $normalizedResumeIndex = 0;
+        }
+        if ($normalizedResumeIndex > $totalUrls) {
+            $normalizedResumeIndex = $totalUrls;
+        }
+        if ($normalizedResumeIndex > $entry['index']) {
+            $entry['index'] = $normalizedResumeIndex;
+        }
+    }
 
     if ($entry['index'] >= $totalUrls) {
         saveRateLimitEntry($sitemapUrl, $entry);

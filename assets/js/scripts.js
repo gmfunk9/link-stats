@@ -50,6 +50,11 @@ class LinkChecker {
         this.linkCounts = new Map();
         this.hasLinkErrors = false;
         this.lastLinkErrorDetail = '';
+        this.currentSitemapUrl = '';
+        this.localStorageKey = 'linkStatsCache';
+        this.localStorageAvailable = this.checkLocalStorageAvailability();
+        this.lastProcessedIndex = 0;
+        this.totalUrls = 0;
         this.initEventListeners();
     }
 
@@ -73,6 +78,8 @@ class LinkChecker {
         this.linkCounts.clear();
         this.hasLinkErrors = false;
         this.lastLinkErrorDetail = '';
+        this.lastProcessedIndex = 0;
+        this.totalUrls = 0;
 
         if (this.urlList) {
             this.urlList.innerHTML = '';
@@ -119,17 +126,24 @@ class LinkChecker {
             alert('Please enter a valid sitemap URL.');
             return;
         }
+        this.currentSitemapUrl = sitemapUrl;
         try {
             const parsedUrl = new URL(sitemapUrl);
             this.baseDomain = parsedUrl.hostname;
             this.resetStateForNewScan();
+            this.restoreCachedEntries(sitemapUrl);
             this.showFeedback('Fetching URLs...', 'info');
+            const formData = new URLSearchParams();
+            formData.set('url', sitemapUrl);
+            if (this.lastProcessedIndex > 0) {
+                formData.set('resumeIndex', String(this.lastProcessedIndex));
+            }
             const response = await fetch(this.config.apiUrl, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded'
                 },
-                body: 'url=' + encodeURIComponent(sitemapUrl)
+                body: formData.toString()
             });
             if (!response.ok) {
                 throw new Error('Network response was not ok');
@@ -144,6 +158,16 @@ class LinkChecker {
             if (result.error) {
                 throw new Error(result.error);
             }
+            if (typeof result.processed === 'number') {
+                this.lastProcessedIndex = result.processed;
+            } else {
+                this.lastProcessedIndex = 0;
+            }
+            if (typeof result.total === 'number') {
+                this.totalUrls = result.total;
+            } else {
+                this.totalUrls = 0;
+            }
             let batch = [];
             if (Array.isArray(result.urls)) {
                 batch = result.urls;
@@ -155,6 +179,7 @@ class LinkChecker {
             const feedbackLevel = batch.length > 0 ? 'success' : 'info';
             this.showFeedback(message, feedbackLevel);
             if (batch.length === 0) {
+                this.persistCacheState();
                 return;
             }
             this.displayInitialUrls(batch);
@@ -168,6 +193,7 @@ class LinkChecker {
         urls.forEach(url => {
             this.createDetailElement(url, 'Queued', this.urlList);
         });
+        this.persistCacheState();
     }
 
     enqueueUrls(urls) {
@@ -196,6 +222,9 @@ class LinkChecker {
                 message = result.message;
             }
             this.showFeedback(message, 'success');
+            this.deleteCachePayload();
+            this.lastProcessedIndex = 0;
+            this.totalUrls = 0;
         } catch (error) {
             this.handleError(error, 'Failed to clear cache');
         }
@@ -250,6 +279,7 @@ class LinkChecker {
             console.error('Link fetch error for URL:', url, 'Detail:', errorDetail);
             this.updateStatus(url, 'Error: ' + errorDetail);
             this.processQueue();
+            this.persistCacheState();
             return;
         }
 
@@ -261,6 +291,7 @@ class LinkChecker {
                 this.addFoundLink(linkUrl, statusData, url);
             });
         }
+        this.persistCacheState();
         this.processQueue();
     }
 
@@ -476,5 +507,155 @@ class LinkChecker {
             return 'error';
         }
         return 'complete';
+    }
+
+    checkLocalStorageAvailability() {
+        if (typeof window === 'undefined') {
+            return false;
+        }
+        if (typeof window.localStorage === 'undefined') {
+            return false;
+        }
+        const testKey = '__linkStatsLocalStorageTest';
+        try {
+            window.localStorage.setItem(testKey, '1');
+            window.localStorage.removeItem(testKey);
+            return true;
+        } catch (error) {
+            console.error('Local storage is unavailable', error);
+            return false;
+        }
+    }
+
+    persistCacheState() {
+        if (!this.localStorageAvailable) {
+            return;
+        }
+        if (this.currentSitemapUrl === '') {
+            return;
+        }
+        if (!this.urlList) {
+            return;
+        }
+        const payload = {
+            sitemapUrl: this.currentSitemapUrl,
+            html: this.urlList.innerHTML,
+            timestamp: new Date().toISOString(),
+            lastProcessedIndex: this.lastProcessedIndex,
+            totalUrls: this.totalUrls,
+        };
+        this.writeCachePayload(payload);
+    }
+
+    restoreCachedEntries(sitemapUrl) {
+        if (!this.localStorageAvailable) {
+            return;
+        }
+        const payload = this.readCachePayload();
+        if (!payload) {
+            return;
+        }
+        if (payload.sitemapUrl !== sitemapUrl) {
+            return;
+        }
+        if (!this.urlList) {
+            return;
+        }
+        this.lastProcessedIndex = this.parseStoredNumeric(payload.lastProcessedIndex);
+        this.totalUrls = this.parseStoredNumeric(payload.totalUrls);
+        this.urlList.innerHTML = payload.html || '';
+        this.rebuildLinkCountsFromDom();
+    }
+
+    rebuildLinkCountsFromDom() {
+        if (!this.urlList) {
+            return;
+        }
+        this.linkCounts.clear();
+        const summaries = this.urlList.querySelectorAll('summary[data-url]');
+        summaries.forEach(summary => {
+            const url = summary.getAttribute('data-url');
+            if (!url) {
+                return;
+            }
+            const countElement = summary.querySelector('.summary-link-count');
+            const textContent = countElement ? countElement.textContent : '';
+            const parsedCount = this.parseLinkCountValue(textContent);
+            this.linkCounts.set(url, parsedCount);
+        });
+    }
+
+    parseLinkCountValue(text) {
+        if (!text) {
+            return 0;
+        }
+        const match = text.match(/\d+/);
+        if (!match) {
+            return 0;
+        }
+        const parsed = Number(match[0]);
+        if (Number.isNaN(parsed)) {
+            return 0;
+        }
+        return parsed;
+    }
+
+    parseStoredNumeric(value) {
+        if (typeof value === 'number') {
+            return value;
+        }
+        if (typeof value === 'string') {
+            const trimmedValue = value.trim();
+            if (trimmedValue === '') {
+                return 0;
+            }
+            const parsed = Number(trimmedValue);
+            if (!Number.isNaN(parsed)) {
+                return parsed;
+            }
+        }
+        return 0;
+    }
+
+    readCachePayload() {
+        if (!this.localStorageAvailable) {
+            return null;
+        }
+        try {
+            const raw = window.localStorage.getItem(this.localStorageKey);
+            if (!raw) {
+                return null;
+            }
+            const parsed = JSON.parse(raw);
+            if (typeof parsed !== 'object' || parsed === null) {
+                return null;
+            }
+            return parsed;
+        } catch (error) {
+            console.error('Unable to read cache payload', error);
+            return null;
+        }
+    }
+
+    writeCachePayload(value) {
+        if (!this.localStorageAvailable) {
+            return;
+        }
+        try {
+            window.localStorage.setItem(this.localStorageKey, JSON.stringify(value));
+        } catch (error) {
+            console.error('Unable to write cache payload', error);
+        }
+    }
+
+    deleteCachePayload() {
+        if (!this.localStorageAvailable) {
+            return;
+        }
+        try {
+            window.localStorage.removeItem(this.localStorageKey);
+        } catch (error) {
+            console.error('Unable to delete cache payload', error);
+        }
     }
 }

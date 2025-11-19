@@ -9,6 +9,9 @@ IMPORTANT: Only edit code when explicitly asked.
 VERY IMPORTANT: Code must follow KISS, DRY, YAGNI, SRP.  
 IGNORE: project.htm and anything in .gitignore.  
 
+# NOTES
+Keep an onging record of anything tricky or unintuitive in the NOTES.md file
+
 # STYLE
 IMPORTANT: Prefer early returns.  
 Rule: One condition per line.  

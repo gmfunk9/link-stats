@@ -8,7 +8,7 @@ require_once __DIR__ . '/http.php';
 require_once __DIR__ . '/response.php';
 
 const SITEMAP_SERVICE_BASE = 'http://getsitemap.funkpd.com/json?url=';
-const DAILY_URL_LIMIT = 100;
+const DAILY_URL_LIMIT = 3;
 
 if (isSitemapHttpRequest()) {
     handleSitemapRequest();
@@ -39,6 +39,18 @@ function handleSitemapRequest(): void
     }
 
     $normalizedSitemapUrl = normalizeSitemapUrl($validatedUrl);
+    $resumeIndex = null;
+
+    if (array_key_exists('resumeIndex', $_POST)) {
+        $candidateIndex = filter_var(
+            $_POST['resumeIndex'],
+            FILTER_VALIDATE_INT
+        );
+
+        if ($candidateIndex !== false && $candidateIndex >= 0) {
+            $resumeIndex = $candidateIndex;
+        }
+    }
     try {
         $urls = fetchSitemapUrls($normalizedSitemapUrl);
     } catch (RuntimeException $exception) {
@@ -51,7 +63,12 @@ function handleSitemapRequest(): void
         return;
     }
 
-    $rateLimited = rateLimitUrls($urls, $normalizedSitemapUrl, DAILY_URL_LIMIT);
+    $rateLimited = rateLimitUrls(
+        $urls,
+        $normalizedSitemapUrl,
+        DAILY_URL_LIMIT,
+        $resumeIndex
+    );
     sendJsonResponse($rateLimited);
 }
 
