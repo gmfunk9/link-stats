@@ -46,9 +46,10 @@ class LinkChecker {
             clearCacheUrl: 'clear_cache.php'
         };
         this.urlQueue = [];
-        this.currentlyChecking = false;
         this.baseDomain = '';
         this.linkCounts = new Map();
+        this.hasLinkErrors = false;
+        this.lastLinkErrorDetail = '';
         this.initEventListeners();
     }
 
@@ -64,6 +65,17 @@ class LinkChecker {
             clearCacheButton.addEventListener('click', () => {
                 this.clearLocalCache();
             });
+        }
+    }
+
+    resetStateForNewScan() {
+        this.urlQueue = [];
+        this.linkCounts.clear();
+        this.hasLinkErrors = false;
+        this.lastLinkErrorDetail = '';
+
+        if (this.urlList) {
+            this.urlList.innerHTML = '';
         }
     }
 
@@ -92,6 +104,11 @@ class LinkChecker {
         }
     }
 
+    recordLinkFailure(detail) {
+        this.hasLinkErrors = true;
+        this.lastLinkErrorDetail = detail;
+    }
+
     async fetchUrlsAndCheckLinks() {
         const urlInput = document.getElementById('sitemapUrl');
         if (!urlInput) {
@@ -105,6 +122,7 @@ class LinkChecker {
         try {
             const parsedUrl = new URL(sitemapUrl);
             this.baseDomain = parsedUrl.hostname;
+            this.resetStateForNewScan();
             this.showFeedback('Fetching URLs...', 'info');
             const response = await fetch(this.config.apiUrl, {
                 method: 'POST',
@@ -185,7 +203,15 @@ class LinkChecker {
 
     processQueue() {
         if (this.urlQueue.length === 0) {
-            this.showFeedback('All URLs processed.', 'success');
+            if (this.hasLinkErrors) {
+                this.showFeedback(
+                    'Finished with errors. See the list below.',
+                    'warning',
+                    this.lastLinkErrorDetail
+                );
+            } else {
+                this.showFeedback('All URLs processed.', 'success');
+            }
             return;
         }
         const nextUrl = this.urlQueue.shift();
@@ -211,10 +237,23 @@ class LinkChecker {
     }
 
     handleResponse(data, url) {
-        this.updateStatus(url, 'Complete');
         if (data.error) {
-            this.updateStatus(url, 'Error: ' + data.error);
+            let errorDetail = '';
+
+            if (typeof data.error === 'string') {
+                errorDetail = data.error;
+            } else {
+                errorDetail = String(data.error);
+            }
+
+            this.recordLinkFailure(errorDetail);
+            console.error('Link fetch error for URL:', url, 'Detail:', errorDetail);
+            this.updateStatus(url, 'Error: ' + errorDetail);
+            this.processQueue();
+            return;
         }
+
+        this.updateStatus(url, 'Complete');
         if (data.interlinks) {
             Object.entries(data.interlinks).forEach(entry => {
                 const linkUrl = entry[0];
@@ -432,6 +471,9 @@ class LinkChecker {
         }
         if (status === 'Working') {
             return 'working';
+        }
+        if (status.startsWith('Error')) {
+            return 'error';
         }
         return 'complete';
     }

@@ -31,7 +31,9 @@ function fetchCachedInterlink(string $url, array &$linkCache, string $cacheFileP
     $fetchResult = fetchUrlWithHeaders($url);
 
     if (isset($fetchResult['error'])) {
-        $linkCache[$url] = ['error' => $fetchResult['error']];
+        $errorMessage = (string) $fetchResult['error'];
+        error_log('Failed to fetch interlink ' . $url . ': ' . $errorMessage);
+        $linkCache[$url] = ['error' => $errorMessage];
         saveLinkCache($cacheFilePath, $linkCache);
         return $linkCache[$url];
     }
