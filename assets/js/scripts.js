@@ -67,6 +67,31 @@ class LinkChecker {
         }
     }
 
+    showFeedback(message, level = 'info', detail = '') {
+        if (!this.feedbackElement) {
+            return;
+        }
+
+        const allowedLevels = ['info', 'success', 'warning', 'error'];
+        const normalizedLevel = allowedLevels.includes(level) ? level : 'info';
+        const classNames = allowedLevels.map(currentLevel => `feedback--${currentLevel}`);
+
+        this.feedbackElement.classList.remove(...classNames);
+        this.feedbackElement.classList.add(`feedback--${normalizedLevel}`);
+        this.feedbackElement.textContent = '';
+
+        const messageElement = document.createElement('span');
+        messageElement.textContent = message;
+        this.feedbackElement.appendChild(messageElement);
+
+        if (detail) {
+            const detailElement = document.createElement('span');
+            detailElement.classList.add('feedback-detail');
+            detailElement.textContent = detail;
+            this.feedbackElement.appendChild(detailElement);
+        }
+    }
+
     async fetchUrlsAndCheckLinks() {
         const urlInput = document.getElementById('sitemapUrl');
         if (!urlInput) {
@@ -80,7 +105,7 @@ class LinkChecker {
         try {
             const parsedUrl = new URL(sitemapUrl);
             this.baseDomain = parsedUrl.hostname;
-            this.feedbackElement.textContent = 'Fetching URLs...';
+            this.showFeedback('Fetching URLs...', 'info');
             const response = await fetch(this.config.apiUrl, {
                 method: 'POST',
                 headers: {
@@ -109,7 +134,8 @@ class LinkChecker {
             if (typeof result.message === 'string') {
                 message = result.message;
             }
-            this.feedbackElement.textContent = message;
+            const feedbackLevel = batch.length > 0 ? 'success' : 'info';
+            this.showFeedback(message, feedbackLevel);
             if (batch.length === 0) {
                 return;
             }
@@ -132,7 +158,7 @@ class LinkChecker {
     }
 
     async clearLocalCache() {
-        this.feedbackElement.textContent = 'Clearing cache...';
+        this.showFeedback('Clearing cache...', 'info');
         try {
             const response = await fetch(this.config.clearCacheUrl, {
                 method: 'POST'
@@ -151,7 +177,7 @@ class LinkChecker {
             if (typeof result.message === 'string') {
                 message = result.message;
             }
-            this.feedbackElement.textContent = message;
+            this.showFeedback(message, 'success');
         } catch (error) {
             this.handleError(error, 'Failed to clear cache');
         }
@@ -159,7 +185,7 @@ class LinkChecker {
 
     processQueue() {
         if (this.urlQueue.length === 0) {
-            this.feedbackElement.textContent = 'All URLs processed.';
+            this.showFeedback('All URLs processed.', 'success');
             return;
         }
         const nextUrl = this.urlQueue.shift();
@@ -298,7 +324,10 @@ class LinkChecker {
 
     handleError(error, message) {
         console.error('Error:', error, 'Message:', message);
-        this.feedbackElement.textContent = message + ': ' + error.message;
+        const detail = error && typeof error.message === 'string'
+            ? error.message
+            : String(error);
+        this.showFeedback(message, 'error', detail);
     }
 
     buildUrlSelector(url) {

@@ -18,7 +18,7 @@
             <div class="field-group">
                 <label for="sitemapUrl">Sitemap URL</label>
                 <div class="field-group__controls">
-                    <input type="text" id="sitemapUrl" placeholder="Enter sitemap URL" value="https://funkpd.com/sitemap.xml">
+                    <input type="text" id="sitemapUrl" placeholder="Enter website URL" value="https://funkpd.com">
                     <button id="checkLinksButton" class="btn btn--primary">Check Links</button>
                 </div>
             </div>

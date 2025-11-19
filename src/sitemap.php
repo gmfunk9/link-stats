@@ -7,7 +7,7 @@ require_once __DIR__ . '/cache.php';
 require_once __DIR__ . '/http.php';
 require_once __DIR__ . '/response.php';
 
-const SITEMAP_SERVICE_BASE = 'https://getsitemap.funkpd.com/json?url=';
+const SITEMAP_SERVICE_BASE = 'http://getsitemap.funkpd.com/json?url=';
 const DAILY_URL_LIMIT = 100;
 
 if (isSitemapHttpRequest()) {
@@ -38,14 +38,20 @@ function handleSitemapRequest(): void
         return;
     }
 
-    $urls = fetchSitemapUrls($validatedUrl);
+    $normalizedSitemapUrl = normalizeSitemapUrl($validatedUrl);
+    try {
+        $urls = fetchSitemapUrls($normalizedSitemapUrl);
+    } catch (RuntimeException $exception) {
+        sendJsonResponse(buildErrorPayload($exception->getMessage()));
+        return;
+    }
 
     if (count($urls) === 0) {
         sendJsonResponse(buildErrorPayload('No URLs found in sitemap.'));
         return;
     }
 
-    $rateLimited = rateLimitUrls($urls, $validatedUrl, DAILY_URL_LIMIT);
+    $rateLimited = rateLimitUrls($urls, $normalizedSitemapUrl, DAILY_URL_LIMIT);
     sendJsonResponse($rateLimited);
 }
 
@@ -66,29 +72,20 @@ function fetchSitemapUrls(string $sitemapUrl): array
     $contentResult = fetchSimpleContent($serviceUrl, 20);
 
     if (isset($contentResult['error'])) {
-        error_log('Failed to fetch sitemap service: ' . $contentResult['error']);
-        return [];
+        $errorMessage = $contentResult['error'];
+        error_log('Failed to fetch sitemap service: ' . $errorMessage);
+        throw new RuntimeException('Failed to reach sitemap service: ' . $errorMessage);
     }
 
     $body = $contentResult['body'] ?? '';
 
     if ($body === '') {
         error_log('Empty sitemap service response from ' . $serviceUrl);
-        return [];
+        throw new RuntimeException('Empty sitemap service response from ' . $serviceUrl);
     }
 
     $payload = decodeSitemapServiceResponse($body);
-
-    if (count($payload) === 0) {
-        return [];
-    }
-
     $urls = extractSitemapUrls($payload);
-
-    if (count($urls) === 0) {
-        error_log('No URLs returned by sitemap service for ' . $sitemapUrl);
-        return [];
-    }
 
     return $urls;
 }
@@ -99,6 +96,66 @@ function buildSitemapServiceUrl(string $sitemapUrl): string
     return SITEMAP_SERVICE_BASE . $encodedUrl;
 }
 
+function normalizeSitemapUrl(string $inputUrl): string
+{
+    $parsedUrl = parse_url($inputUrl);
+
+    if ($parsedUrl === false) {
+        return $inputUrl;
+    }
+
+    $scheme = $parsedUrl['scheme'] ?? '';
+
+    if ($scheme === '') {
+        return $inputUrl;
+    }
+
+    $host = $parsedUrl['host'] ?? '';
+
+    if ($host === '') {
+        return $inputUrl;
+    }
+
+    $normalizedUrl = $scheme . '://' . $host;
+    $port = $parsedUrl['port'] ?? null;
+
+    if ($port !== null) {
+        $normalizedUrl .= ':' . $port;
+    }
+
+    $path = $parsedUrl['path'] ?? '';
+
+    if ($path === '') {
+        return $normalizedUrl;
+    }
+
+    $lastSegment = basename($path);
+
+    if ($lastSegment !== '') {
+        $segmentLower = strtolower($lastSegment);
+        $segmentContainsSitemap = strpos($segmentLower, 'sitemap') !== false;
+
+        if ($segmentContainsSitemap) {
+            return $normalizedUrl;
+        }
+    }
+
+    $normalizedUrl .= $path;
+    $query = $parsedUrl['query'] ?? '';
+
+    if ($query !== '') {
+        $normalizedUrl .= '?' . $query;
+    }
+
+    $fragment = $parsedUrl['fragment'] ?? '';
+
+    if ($fragment !== '') {
+        $normalizedUrl .= '#' . $fragment;
+    }
+
+    return $normalizedUrl;
+}
+
 function decodeSitemapServiceResponse(string $body): array
 {
     $decoded = json_decode($body, true);
@@ -106,12 +163,12 @@ function decodeSitemapServiceResponse(string $body): array
     if (json_last_error() !== JSON_ERROR_NONE) {
         $message = json_last_error_msg();
         error_log('Invalid JSON returned by sitemap service: ' . $message);
-        return [];
+        throw new RuntimeException('Invalid JSON returned by sitemap service: ' . $message);
     }
 
     if (!is_array($decoded)) {
         error_log('Unexpected JSON root returned by sitemap service.');
-        return [];
+        throw new RuntimeException('Unexpected JSON root returned by sitemap service.');
     }
 
     return $decoded;
@@ -122,13 +179,13 @@ function extractSitemapUrls(array $payload): array
     $sitemapEntries = readSitemapEntries($payload);
 
     if (count($sitemapEntries) === 0) {
-        return [];
+        throw new RuntimeException('Sitemap service returned an empty sitemap list.');
     }
 
     $filtered = filterValidUrls($sitemapEntries);
 
     if (count($filtered) === 0) {
-        return [];
+        throw new RuntimeException('Sitemap service payload did not contain any valid URLs.');
     }
 
     return array_values(array_unique($filtered));
@@ -138,26 +195,27 @@ function readSitemapEntries(array $payload): array
 {
     if (!array_key_exists('success', $payload)) {
         error_log('Sitemap payload missing success flag.');
-        return [];
+        throw new RuntimeException('Sitemap payload missing success flag.');
     }
 
     $serviceSuccess = $payload['success'];
 
     if ($serviceSuccess !== true) {
-        error_log('Sitemap service reported failure.');
-        return [];
+        $message = $payload['message'] ?? 'Unknown sitemap service failure.';
+        error_log('Sitemap service reported failure: ' . $message);
+        throw new RuntimeException('Sitemap service reported failure: ' . $message);
     }
 
     if (!array_key_exists('sitemap', $payload)) {
         error_log('Sitemap payload missing sitemap list.');
-        return [];
+        throw new RuntimeException('Sitemap payload missing sitemap list.');
     }
 
     $sitemapEntries = $payload['sitemap'];
 
     if (!is_array($sitemapEntries)) {
         error_log('Sitemap list is not an array.');
-        return [];
+        throw new RuntimeException('Sitemap list is not an array.');
     }
 
     return $sitemapEntries;
